@@ -239,6 +239,39 @@ class auth_ldap extends auth_basic {
                 }
             }
         }
+		
+		//get dynamic groups for given user if grouptree and dyngroupfilter is given
+        if ($this->cnf['grouptree'] && $this->cnf['dyngroupfilter']) {
+            $base   = $this->_makeFilter($this->cnf['grouptree'], $user_result);
+            $filter = $this->_makeFilter($this->cnf['dyngroupfilter'], $user_result);
+            $sr = @ldap_search($this->con, $base, $filter, array($this->cnf['groupkey']));
+            if(!$sr){
+                msg("LDAP: Reading group memberships failed",-1);
+                if($this->cnf['debug']){
+                    msg('LDAP group search: '.htmlspecialchars(ldap_error($this->con)),0,__LINE__,__FILE__);
+                    msg('LDAP search at: '.htmlspecialchars($base.' '.$filter),0,__LINE__,__FILE__);
+                }
+                return false;
+            }
+            $result = ldap_get_entries($this->con, $sr);
+            ldap_free_result($sr);
+
+            if(is_array($result)) foreach($result as $grp){
+                if(!empty($grp[$this->cnf['groupkey']][0])){
+					$justthese = array("memberUid", "cn");
+					$sr2 = @ldap_search($this->con, $grp['dn'], "(objectClass=*)", $justthese);
+					$result2 = ldap_get_entries($this->con, $sr2);		
+					for ($j=0; $j < $result2[0][memberuid][count];$j++){
+							if ( $result2[0][memberuid][$j] == $user_result[user]){
+									$info['grps'][] = $result2[0]['cn'][0];
+									if($this->cnf['debug']){
+											msg('LDAP dynamic usergroup: '.htmlspecialchars($result2[0][cn][0]),0,__LINE__,__FILE__);
+									}
+							}
+					}
+                }
+            }
+        }	
 
         // always add the default group to the list of groups
         if(!in_array($conf['defaultgroup'],$info['grps'])){
